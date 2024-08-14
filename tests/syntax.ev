@@ -1,0 +1,4 @@
+4 - ( Power > 3 ? 1
+: Toughness + 4 * Power < 7 ? Power + Toughness
+: 1 + x
+) + 4
