@@ -28,8 +28,14 @@ data NumOp = AddOp | SubOp | MulOp | DivOp deriving (Eq, Show)
 data BinOp = CmpOp CmpOp | CndOp CndOp | LogOp LogOp | NumOp NumOp
   deriving (Eq, Show)
 
+data BodyExpr
+  = ReturnExpr Expr
+  | NodeExpr VarIdent Expr BodyExpr
+  deriving (Eq, Show)
+
 data Expr
   = BinExpr Expr BinOp Expr
+  | BodyExpr BodyExpr
   | FieldExpr FieldIdent
   | UndefExpr -- placeholder during parsing
   | ParenExpr Expr

@@ -5,7 +5,7 @@ import Text.Parsec (eof, spaces, runParser)
 
 main :: IO ()
 main = do
-    let p = exprP False <* eof
+    let p = exprP False <* spaces <* eof
     input <- readFile "tests/syntax.ev"
     case runParser p () "" $ input of
       Left err -> print err

@@ -12,7 +12,8 @@ import Text.Parsec
 -- // General helpers //
 
 -- attempts to transform the parsed data in place and allows for a specific
--- error message from construction
+-- error message from buildion
+-- TODO: improve error msg output
 build :: (Stream s m Char)
       => String
       -> (a -> Maybe b)
@@ -65,7 +66,8 @@ valueP = try (intP <|> boolP <|> enumP)
 -- Parse a single base expression corresponding to one of the adts of Expr and
 -- do not recurse unto any child-exprs
 singleExprP :: (Stream s m Char) => ParsecT s u m Expr
-singleExprP = valueExprP <|> fieldExprP <|> varExprP <|> binOpP <|> parenP
+singleExprP
+  = valueExprP <|> fieldExprP <|> varExprP <|> binOpP <|> parenP <|> bodyP
   where
     -- // Basic element parsers //
     fieldExprP :: (Stream s m Char) => ParsecT s u m Expr
@@ -123,23 +125,42 @@ exprsP False = sepEndBy1 singleExprP spacesP <* (void newline <|> eof)
 -- Parse an expression tree
 --  First parse the individual expr statements into a list
 --  Then sort these using the Shunting Yard algorithm into postfix notation
---  Finally, construct the expr tree by filling the BinExpr with their operands
+--  Finally, build the expr tree by filling the BinExpr with their operands
 --  and removing parenthesis from the expr tree
 exprP :: (Stream s m Char) => InParens -> ParsecT s u m Expr
 exprP inParens
-  = build "error when constructing expr tree"
-  (constructExpr [] . shuntingYard) $ exprsP inParens
+  = build "error when building expr tree"
+  (buildExpr [] . shuntingYard) $ exprsP inParens
     where
-      constructExpr :: [Expr] -> [Expr] -> Maybe Expr
-      constructExpr [expr] []
+      buildExpr :: [Expr] -> [Expr] -> Maybe Expr
+      buildExpr [expr] []
         = Just expr
-      constructExpr acc []
+      buildExpr acc []
         = Nothing -- not all expr's where used
-      constructExpr (y:x:acc) ((BinExpr UndefExpr op UndefExpr):xs)
-        = constructExpr (BinExpr x op y : acc) xs
-      constructExpr acc ((ParenExpr x) : xs)
-        = constructExpr (x : acc) xs -- extract paren expr
-      constructExpr acc (UndefExpr : xs)
+      buildExpr (y:x:acc) ((BinExpr UndefExpr op UndefExpr):xs)
+        = buildExpr (BinExpr x op y : acc) xs
+      buildExpr acc ((ParenExpr x) : xs)
+        = buildExpr (x : acc) xs -- extract paren expr
+      buildExpr acc (UndefExpr : xs)
         = Nothing -- incorrect parse
-      constructExpr acc (x:xs)
-        = constructExpr (x : acc) xs -- otherwise put on the stack to consume
+      buildExpr acc (x:xs)
+        = buildExpr (x : acc) xs -- otherwise put on the stack to consume
+
+-- Parse an expr body
+bodyP :: (Stream s m Char) => ParsecT s u m Expr
+bodyP = build "error when building epxr body"
+      (fmap BodyExpr . foldr buildBody Nothing)
+      $ between (char '{' <* spaces) (char '}') bodyNodesP
+  where
+    maybeVarIdentP :: (Stream s m Char) => ParsecT s u m (Maybe VarIdent)
+    maybeVarIdentP = Just <$> try (varIdentP <* string " = ") <|> pure Nothing
+
+    bodyNodesP :: (Stream s m Char) => ParsecT s u m [(Maybe VarIdent, Expr)]
+    bodyNodesP = many1 ((,) <$> maybeVarIdentP <*> exprP False <* spacesP)
+
+    buildBody :: (Maybe VarIdent, Expr) -> Maybe BodyExpr -> Maybe BodyExpr
+    buildBody (Nothing, expr) Nothing
+      = Just $ ReturnExpr expr
+    buildBody (Just ident, expr) (Just next)
+      = Just $ NodeExpr ident expr next
+    buildBody _ _ = Nothing
