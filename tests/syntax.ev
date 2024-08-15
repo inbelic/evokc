@@ -1,15 +1,9 @@
 {
-   x = 3 + 4 + Power + {
-      x = 4 * 3
-      x
-   }
-   y = (45
-   + Toughness
-   * (3 > Power ? 1 : 0)
-   )
-   x == y
-} ? ( 4 - ( Power > 3 ? 1
-    : Toughness + 4 * Power < 7 ? Power + Toughness
-    : 1 + x
-    ) + 4
-) : 0
+   x = 4 * 5
+   y = x - 1 + 3
+   z = {
+      x = 2
+      x - 4
+   } ? 1 : 0
+   (x - y) * z
+}

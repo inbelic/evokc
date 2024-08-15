@@ -1,12 +1,20 @@
 module Main where
 
+import AST
+import Typer
 import Parser
+
+import qualified Data.Map.Strict as Map (fromList)
 import Text.Parsec (eof, spaces, runParser)
 
 main :: IO ()
 main = do
     let p = exprP False <* spaces <* eof
+        t = exprT
+        ts = TypeState
+            (Map.fromList [(FieldIdent "Evok", EnumType $ map EnumIdent ["One", "Two"])])
+            (Map.fromList [])
     input <- readFile "tests/syntax.ev"
     case runParser p () "" $ input of
       Left err -> print err
-      Right mod -> print $ mod
+      Right x -> print $ runTyper t ts x
