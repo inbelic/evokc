@@ -5,14 +5,29 @@ import Text.Parsec ( SourcePos )
 import qualified Data.Map.Strict as Map (Map)
 
 newtype EnumIdent = EnumIdent String deriving (Eq, Show)
-newtype FieldIdent = FieldIdent String deriving (Eq, Show)
-newtype VarIdent = VarIdent String deriving (Eq, Show)
+newtype FieldIdent = FieldIdent String deriving (Eq, Ord, Show)
+newtype VarIdent = VarIdent String deriving (Eq, Ord, Show)
+
+-- // Define types //
+
+data IntType = I8 | U8
+    deriving (Eq, Show)
+
+data FieldType
+  = BoolType
+  | IntType IntType
+  | EnumType [EnumIdent]
+  deriving (Eq, Show)
+
+-- // Define values //
 
 data Value
   = Bool Bool
   | Int Int
   | Enum FieldIdent EnumIdent
   deriving (Eq, Show)
+
+-- // Define binary operations //
 
 -- A comparison operation. One that takes two like values and outputs a boolean
 data CmpOp = EqOp | NeOp | GtOp | GeOp | LtOp | LeOp deriving (Eq, Show)
@@ -28,6 +43,8 @@ data NumOp = AddOp | SubOp | MulOp | DivOp deriving (Eq, Show)
 data BinOp = CmpOp CmpOp | CndOp CndOp | LogOp LogOp | NumOp NumOp
   deriving (Eq, Show)
 
+-- // Define an expression //
+
 data BodyExpr
   = ReturnExpr Expr
   | NodeExpr VarIdent Expr BodyExpr
@@ -37,8 +54,8 @@ data Expr
   = BinExpr Expr BinOp Expr
   | BodyExpr BodyExpr
   | FieldExpr FieldIdent
-  | UndefExpr -- placeholder during parsing
   | ParenExpr Expr
+  | UndefExpr -- placeholder during parsing
   | ValueExpr Value
   | VarExpr VarIdent
   deriving (Eq, Show)
