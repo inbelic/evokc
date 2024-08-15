@@ -169,8 +169,9 @@ opT = guard g . imap (\(BinExpr lhs op rhs) -> (lhs, op, rhs)) $ binOpT
     -- All other CmpOps requires both operands to have the same IntType, as
     -- implemented in checkType NumOp ...
     checkType (CmpOp _) fTypes1 fTypes2
-      = checkType (NumOp AddOp) fTypes1 fTypes2
-
+      = case checkType (NumOp AddOp) fTypes1 fTypes2 of
+          [] -> []
+          _ -> [BoolType]
 
 -- // Expr body typer //
 
