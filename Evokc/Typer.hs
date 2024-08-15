@@ -1,10 +1,13 @@
 module Typer where
 
 import AST
+import TyperError
 
 import Control.Applicative
 import Data.List (intersect, union)
 import qualified Data.Map.Strict as Map (Map, empty, insert, insertWith, lookup)
+
+-- // Define a TypeState //
 
 data TypeState = TypeState
   { fTypes :: Map.Map FieldIdent FieldType
@@ -23,13 +26,22 @@ insertVTypes var vTypes' ts
 resetScope :: TypeState -> TypeState
 resetScope ts = ts { vTypes = Map.empty }
 
+-- // Define a Typer //
+
 newtype Typer a = Typer
-  { runTyper :: TypeState -> a -> [FieldType]
+  { runTyper :: TypeState -> a -> Either TyperError [FieldType]
   }
 
-instance Semigroup (Typer a) where
-  (<>) :: Typer a -> Typer a -> Typer a
-  (Typer t1) <> (Typer t2) = Typer $ \ts x -> union (t1 ts x) (t2 ts x)
+(<+>) :: Typer a -> Typer a -> Typer a
+(Typer ta) <+> (Typer tb)
+  = Typer $ \ts x ->
+    let aRes = ta ts x
+        bRes = tb ts x
+     in case (aRes, bRes) of
+          (Right aTypes, Right bTypes) -> Right $ union aTypes bTypes
+          (Right aTypes, _) -> Right aTypes
+          (_, Right bTypes) -> Right bTypes
+          (Left aErr, Left bErr) -> Left $ aErr <> bErr
 
 -- // General helpers //
 
@@ -48,19 +60,19 @@ guard f (Typer t) =
   Typer $ \ts x ->
     case f x of
       True -> t ts x
-      False -> []
+      False -> Left GuardErr
 
 -- // Value typer //
 
 valueT :: Typer Expr
-valueT = guard g . imap (\(ValueExpr val) -> val) $ boolT <> intT <> enumT
+valueT = guard g . imap (\(ValueExpr val) -> val) $ boolT <+> intT <+> enumT
   where
     g (ValueExpr _) = True
     g _ = False
 
     -- Will always be a BoolType if Value is a Bool
     boolT :: Typer Value
-    boolT = guard g . Typer $ \ts (Bool _) -> [BoolType]
+    boolT = guard g . Typer $ \ts (Bool _) -> Right [BoolType]
       where
         g (Bool _) = True
         g _ = False
@@ -70,11 +82,11 @@ valueT = guard g . imap (\(ValueExpr val) -> val) $ boolT <> intT <> enumT
     intT = guard g . Typer $ \ts (Int x) -> f x
       where
         f x
-          | x < -128 = []
-          | x < 0 = [IntType I8]
-          | x < 128 = [IntType I8, IntType U8]
-          | x < 256 = [IntType U8]
-          | otherwise = []
+          | x < -128 = Left $ IntOverflowErr x
+          | x < 0 = Right [IntType I8]
+          | x < 128 = Right [IntType I8, IntType U8]
+          | x < 256 = Right [IntType U8]
+          | otherwise = Left $ IntOverflowErr x
         g (Int _) = True
         g _ = False
 
@@ -84,9 +96,10 @@ valueT = guard g . imap (\(ValueExpr val) -> val) $ boolT <> intT <> enumT
       case Map.lookup field $ fTypes ts of
         Just (EnumType enums) ->
           case elem enum enums of
-            True -> [EnumType enums]
-            False -> []
-        Nothing -> []
+            True -> Right [EnumType enums]
+            False -> Left $ EnumUndefErr enum enums
+        Just fType -> Left $ FieldTypeMismatch field fType [EnumType [enum]]
+        Nothing -> Left $ FieldUndefErr field
       where
         g (Enum _ _) = True
         g _ = False
@@ -103,8 +116,8 @@ fieldT = guard g . imap (\(FieldExpr field) -> field) $ fieldIdentT
     fieldIdentT :: Typer FieldIdent
     fieldIdentT = Typer $ \ts field ->
       case Map.lookup field $ fTypes ts of
-        Just fType -> [fType]
-        Nothing -> []
+        Just fType -> Right [fType]
+        Nothing -> Left $ FieldUndefErr field
 
 varT :: Typer Expr
 varT = guard g . imap (\(VarExpr var) -> var) $ varIdentT
@@ -116,8 +129,8 @@ varT = guard g . imap (\(VarExpr var) -> var) $ varIdentT
     varIdentT :: Typer VarIdent
     varIdentT = Typer $ \ts var ->
       case Map.lookup var $ vTypes ts of
-        Just fTypes -> fTypes
-        Nothing -> []
+        Just fTypes -> Right fTypes
+        Nothing -> Left $ VarUndefErr var
 
 -- // BinExpr typer //
 
@@ -131,7 +144,16 @@ opT = guard g . imap (\(BinExpr lhs op rhs) -> (lhs, op, rhs)) $ binOpT
     -- these types based on the operation type
     binOpT :: Typer (Expr, BinOp, Expr)
     binOpT = Typer $ \ts (lhs, op, rhs) ->
-      checkType op (runTyper exprT ts lhs) (runTyper exprT ts rhs)
+      let lhsRes = runTyper exprT ts lhs
+          rhsRes = runTyper exprT ts rhs
+       in case (lhsRes, rhsRes) of
+            (Right lhsTypes, Right rhsTypes) ->
+              case checkType op lhsTypes rhsTypes of
+                [] -> Left $ OpTypeMismatch op lhsTypes rhsTypes
+                fTypes -> Right fTypes
+            (Left err, Right _) -> Left err
+            (Right _, Left err) -> Left err
+            (Left lhsErr, Left rhsErr) -> Left $ lhsErr <> rhsErr
 
     checkType :: BinOp -> [FieldType] -> [FieldType] -> [FieldType]
     -- NumOp expects the operands to both be an overlapping IntType and
@@ -189,17 +211,17 @@ bodyExprT = guard g . imap (\(BodyExpr body) -> body) $ bodyT
     bodyT :: Typer BodyExpr
     bodyT = Typer $ \ts expr -> t (resetScope ts) expr
       where
-        t :: TypeState -> BodyExpr -> [FieldType]
+        t :: TypeState -> BodyExpr -> Either TyperError [FieldType]
         t ts (ReturnExpr expr) = runTyper exprT ts expr
         t ts (NodeExpr var expr next)
           = case runTyper exprT ts expr of
-              [] -> []
-              fTypes -> t (insertVTypes var fTypes ts) next
+              Left err -> Left err
+              Right fTypes -> t (insertVTypes var fTypes ts) next
 
 -- // Expr typer //
 
 exprT :: Typer Expr
-exprT = opT <> valueT <> varT <> fieldT <> bodyExprT
+exprT = opT <+> valueT <+> varT <+> fieldT <+> bodyExprT
 
 -- // Statement typer //
 
@@ -207,9 +229,15 @@ statementT :: Typer a -> Typer (Statement a)
 statementT (Typer t)
   = Typer $ \ts (Statement _ _ x) -> t ts x
 
-fieldDefT :: Typer FieldDef
+fieldDefT :: Typer (Statement FieldDef)
 fieldDefT
-  = Typer $ \ts (FieldDef fType maybeExpr) ->
+  = Typer $ \ts (Statement _ (NameIdent name) (FieldDef fType maybeExpr)) ->
       case maybeExpr of
-        Nothing -> [fType]
-        Just expr -> intersect [fType] $ runTyper exprT ts expr
+        Nothing -> Right [fType]
+        Just expr ->
+          case runTyper exprT ts expr of
+            (Left err) -> Left err
+            (Right fTypes) ->
+              case intersect [fType] fTypes of
+                [] -> Left $ FieldTypeMismatch (FieldIdent name) fType fTypes
+                _ -> Right [fType]

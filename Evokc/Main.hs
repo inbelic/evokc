@@ -10,7 +10,7 @@ import Text.Parsec (eof, spaces, runParser)
 main :: IO ()
 main = do
     let p = fieldDefP <* spaces <* eof
-        t = statementT fieldDefT
+        t = fieldDefT
         ts = TypeState
             (Map.fromList [(FieldIdent "Evok", EnumType $ map EnumIdent ["One", "Two"])])
             (Map.fromList [])
