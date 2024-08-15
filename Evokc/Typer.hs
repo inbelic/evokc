@@ -200,3 +200,16 @@ bodyExprT = guard g . imap (\(BodyExpr body) -> body) $ bodyT
 
 exprT :: Typer Expr
 exprT = opT <> valueT <> varT <> fieldT <> bodyExprT
+
+-- // Statement typer //
+
+statementT :: Typer a -> Typer (Statement a)
+statementT (Typer t)
+  = Typer $ \ts (Statement _ _ x) -> t ts x
+
+fieldDefT :: Typer FieldDef
+fieldDefT
+  = Typer $ \ts (FieldDef fType maybeExpr) ->
+      case maybeExpr of
+        Nothing -> [fType]
+        Just expr -> intersect [fType] $ runTyper exprT ts expr

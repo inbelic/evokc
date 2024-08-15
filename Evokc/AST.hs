@@ -6,6 +6,7 @@ import qualified Data.Map.Strict as Map (Map)
 
 newtype EnumIdent = EnumIdent String deriving (Eq, Show)
 newtype FieldIdent = FieldIdent String deriving (Eq, Ord, Show)
+newtype NameIdent = NameIdent String deriving (Eq, Ord, Show)
 newtype VarIdent = VarIdent String deriving (Eq, Ord, Show)
 
 -- // Define types //
@@ -77,3 +78,11 @@ instance Shuntable Expr where
       MulOp -> 6
       DivOp -> 6
   prec _ = 0
+
+-- // Define a statement //
+
+data Statement a = Statement SourcePos NameIdent a
+  deriving (Eq, Show, Functor)
+
+data FieldDef = FieldDef FieldType (Maybe Expr)
+  deriving (Eq, Show)

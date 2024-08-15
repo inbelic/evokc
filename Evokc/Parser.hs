@@ -29,6 +29,8 @@ build s f p = do
 spacesP :: (Stream s m Char) => ParsecT s u m String
 spacesP = many (char ' ')
 
+-- // Identifier parsers //
+
 -- Parse an identifier of the form [A-Z][a-zA-Z]*
 enumIdentP :: (Stream s m Char) => ParsecT s u m EnumIdent
 enumIdentP = EnumIdent <$> (lookAhead upper *> many letter)
@@ -37,9 +39,15 @@ enumIdentP = EnumIdent <$> (lookAhead upper *> many letter)
 fieldIdentP :: (Stream s m Char) => ParsecT s u m FieldIdent
 fieldIdentP = FieldIdent <$> (lookAhead upper *> many letter)
 
+-- Parse an identifier of the form [A-Z][a-zA-Z]*
+nameIdentP :: (Stream s m Char) => ParsecT s u m NameIdent
+nameIdentP = NameIdent <$> (lookAhead upper *> many letter)
+
 -- Parse an identifier of the form [a-z][a-zA-Z]*
 varIdentP :: (Stream s m Char) => ParsecT s u m VarIdent
 varIdentP = VarIdent <$> (lookAhead lower *> many letter)
+
+-- // Value parser //
 
 -- Parse a value: [0-9]+ | -[0-9]+ | true | false | EnumIdent
 valueP :: (Stream s m Char) => ParsecT s u m Value
@@ -62,6 +70,8 @@ valueP = try (intP <|> boolP <|> enumP)
 
     -- // Enum parser //
     enumP = Enum <$> fieldIdentP <*> (string "::" *> enumIdentP)
+
+-- // Expr related parsers //
 
 -- Parse a single base expression corresponding to one of the adts of Expr and
 -- do not recurse unto any child-exprs
@@ -164,3 +174,33 @@ bodyP = build "error when building epxr body"
     buildBody (Just ident, expr) (Just next)
       = Just $ NodeExpr ident expr next
     buildBody _ _ = Nothing
+
+-- // Statement related parsers //
+
+type Keyword = String
+statementP :: (Stream s m Char)
+          => Keyword
+          -> ParsecT s u m a
+          -> ParsecT s u m (Statement a)
+statementP keyword p
+  = Statement
+  <$> getPosition
+  <*> (string keyword *> spacesP *> nameIdentP <* spacesP)
+  <*> p
+
+-- Parse a field def of the form: `field : ` FieldType (` = ` Expr)?
+fieldDefP :: (Stream s m Char) => ParsecT s u m (Statement FieldDef)
+fieldDefP = statementP "field" $
+  FieldDef <$> (string ": " *> fieldTypeP) <*> maybeValueP
+  where
+    maybeValueP = Just <$> (string " = " *> exprP False) <|> pure Nothing
+
+-- Parse a field type: u8 | i8 | bool | enum optional(:: EnumIdent+)
+fieldTypeP :: (Stream s m Char) => ParsecT s u m FieldType
+fieldTypeP = boolTypeP <|> u8TypeP <|> i8TypeP <|> enumTypeP
+  where
+    boolTypeP = const BoolType <$> string "bool"
+    i8TypeP = const (IntType I8) <$> string "i8"
+    u8TypeP = const (IntType U8) <$> string "u8"
+    enumTypeP = EnumType <$>
+      between (string "enum {" *> spaces) (char '}') (endBy1 enumIdentP spaces)
