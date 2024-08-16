@@ -1,7 +1,7 @@
 module Parser where
 
 import AST
-import Shunting ( shuntingYard )
+import ShuntYard ( shuntingYard )
 
 import Control.Monad (void)
 import Data.Char (digitToInt)

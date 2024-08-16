@@ -1,6 +1,6 @@
 module AST where
 
-import Shunting ( Shuntable(..) )
+import ShuntYard ( Shunt(..) )
 import Text.Parsec ( SourcePos )
 import qualified Data.Map.Strict as Map (Map)
 
@@ -61,7 +61,7 @@ data Expr
   | VarExpr VarIdent
   deriving (Eq, Show)
 
-instance Shuntable Expr where
+instance Shunt Expr where
   isOp (BinExpr _ _ _) = True
   isOp _ = False
 

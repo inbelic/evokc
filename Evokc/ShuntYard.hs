@@ -1,19 +1,18 @@
-module Shunting where
+module ShuntYard where
 
-class Shuntable a where
+class Shunt a where
   isOp :: a -> Bool -- differentiate between operations and other exprs
   prec :: a -> Int  -- precedence mapping
-
 
 -- standard implementation of the Shunting Yard Algorithm of a Shuntable type
 -- which defines a precedence of the type and whether it is an "op"
 type OpStack a = [a]
 type Input a = [a]
 type Output a = [a]
-shuntingYard :: (Shuntable a) => [a] -> [a]
+shuntingYard :: (Shunt a) => [a] -> [a]
 shuntingYard = shuntingYard' [] []
   where
-    shuntingYard' :: (Shuntable a) => OpStack a -> Output a -> Input a -> [a]
+    shuntingYard' :: (Shunt a) => OpStack a -> Output a -> Input a -> [a]
     shuntingYard' ops acc []
       = reverse  -- we have been prepending instead of appending so reverse
       $ reverse ops ++ acc -- move the remaining ops to the accumulator
