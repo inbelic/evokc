@@ -25,6 +25,9 @@ build s f p = do
     Nothing -> unexpected s
     (Just x') -> return x'
 
+maybeP :: (Stream s m Char) => ParsecT s u m a -> ParsecT s u m (Maybe a)
+maybeP p = Just <$> try p <|> pure Nothing
+
 -- only allows space characters instead of all whitespace
 spacesP :: (Stream s m Char) => ParsecT s u m String
 spacesP = many (char ' ')
@@ -77,13 +80,15 @@ valueP = try (intP <|> boolP <|> enumP)
 -- do not recurse unto any child-exprs
 singleExprP :: (Stream s m Char) => ParsecT s u m Expr
 singleExprP
-  = valueExprP <|> fieldExprP <|> varExprP <|> binOpP <|> parenP <|> bodyP
+  = callP        -- callP must be tried before field/var as it may consume one
+  <|> valueExprP -- valueExprP must be tried before field as it may consume one
+  <|> fieldExprP <|> varExprP
+  <|> binOpP <|> parenP <|> closureP
   where
     -- // Basic element parsers //
     fieldExprP :: (Stream s m Char) => ParsecT s u m Expr
     fieldExprP = FieldExpr <$> fieldIdentP
 
-    -- valueExprP must be tried before fieldExprP as they both can consume a
     -- fieldIdentP, use try to ensure that the fieldIdent is not consumed
     valueExprP :: (Stream s m Char) => ParsecT s u m Expr
     valueExprP = ValueExpr <$> try valueP
@@ -124,6 +129,17 @@ singleExprP
     parenP :: (Stream s m Char) => ParsecT s u m Expr
     parenP = ParenExpr <$> (char '(' *> spacesP *> exprP True)
 
+    -- // Closure call parser //
+    callP :: (Stream s m Char) => ParsecT s u m Expr
+    callP = try $ CallExpr <$> paramP <*> paramsP
+
+    paramP :: (Stream s m Char) => ParsecT s u m Param
+    paramP = (FieldParam <$> fieldIdentP) <|> (VarParam <$> varIdentP)
+
+    paramsP :: (Stream s m Char) => ParsecT s u m [Param]
+    paramsP
+      = between (char '[') (char ']') (many1 $ paramP <* spacesP)
+
 -- Parse a list of single base expressions
 --  If we are within a parenthesis then we can ignore newlines
 --  Othewise, we will stop at a newline
@@ -156,17 +172,22 @@ exprP inParens
       buildExpr acc (x:xs)
         = buildExpr (x : acc) xs -- otherwise put on the stack to consume
 
--- Parse an expr body
-bodyP :: (Stream s m Char) => ParsecT s u m Expr
-bodyP = build "error when building epxr body"
-      (fmap BodyExpr . foldr buildBody Nothing)
-      $ between (char '{' <* spaces) (char '}') bodyNodesP
+-- Parse an expr closure
+closureP :: (Stream s m Char) => ParsecT s u m Expr
+closureP = ClosureExpr <$> try paramsP <*> bodyP
   where
-    maybeVarIdentP :: (Stream s m Char) => ParsecT s u m (Maybe VarIdent)
-    maybeVarIdentP = Just <$> try (varIdentP <* string " = ") <|> pure Nothing
+    paramsP :: (Stream s m Char) => ParsecT s u m [VarIdent]
+    paramsP
+      = between (char '[') (char ']') (many1 $ varIdentP <* spacesP)
+      <|> pure []
+
+    bodyP :: (Stream s m Char) => ParsecT s u m BodyExpr
+    bodyP = build "error when building epxr body"
+      (foldr buildBody Nothing)
+      $ between (char '{' <* spaces) (char '}') bodyNodesP
 
     bodyNodesP :: (Stream s m Char) => ParsecT s u m [(Maybe VarIdent, Expr)]
-    bodyNodesP = many1 ((,) <$> maybeVarIdentP <*> exprP False <* spacesP)
+    bodyNodesP = many1 ((,) <$> maybeP (varIdentP <* string " = ") <*> exprP False <* spacesP)
 
     buildBody :: (Maybe VarIdent, Expr) -> Maybe BodyExpr -> Maybe BodyExpr
     buildBody (Nothing, expr) Nothing

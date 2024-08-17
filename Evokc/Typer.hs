@@ -4,15 +4,23 @@ import AST
 import TyperError
 
 import Control.Applicative
-import Data.List (intersect, union)
-import qualified Data.Map.Strict as Map (Map, empty, insert, insertWith, lookup)
+import Data.List (intersect, singleton, union)
+import qualified Data.Map.Strict as Map
+  ( Map, empty, insert, insertWith, intersection, fromList, lookup
+  )
 
 -- // Define a TypeState //
 
 data TypeState = TypeState
-  { fTypes :: Map.Map FieldIdent FieldType
-  , vTypes   :: Map.Map VarIdent [FieldType]
+  { cExprs :: Map.Map Param Expr
+  , fTypes :: Map.Map FieldIdent FieldType
+  , vTypes :: Map.Map VarIdent [FieldType]
   } deriving (Eq, Show)
+
+insertCExpr :: Param -> Expr -> TypeState -> TypeState
+insertCExpr ident expr@(ClosureExpr _ _) ts
+  = ts { cExprs = Map.insert ident expr $ cExprs ts }
+insertCExpr _ _ ts = ts
 
 insertFType :: FieldIdent -> FieldType -> TypeState -> TypeState
 insertFType field fType ts = ts { fTypes = Map.insert field fType $ fTypes ts }
@@ -21,10 +29,18 @@ insertVTypes :: VarIdent -> [FieldType] -> TypeState -> TypeState
 insertVTypes var vTypes' ts
   = ts { vTypes = Map.insertWith union var vTypes' $ vTypes ts }
 
--- VarIdents are strictly within their ExprBody so allow for the scope to be
--- reset when entering a new body
-resetScope :: TypeState -> TypeState
-resetScope ts = ts { vTypes = Map.empty }
+-- Non-parameter VarIdents are strictly within their ExprBody, so allow for
+-- the scope to be reset when entering a new body with parameters set to be
+-- any type
+closureScope :: [VarIdent] -> TypeState -> TypeState
+closureScope params ts = ts
+  { vTypes = Map.fromList . map (, anyType) $ params
+  }
+
+-- When we look at a Call we want to ensure the Call parameters will still pass
+-- the type check
+setScope :: [(VarIdent, [FieldType])] -> TypeState -> TypeState
+setScope typedIdents ts = ts { vTypes = Map.fromList typedIdents }
 
 -- // Define a Typer //
 
@@ -125,12 +141,16 @@ varT = guard g . imap (\(VarExpr var) -> var) $ varIdentT
     g (VarExpr _) = True
     g _ = False
 
-    -- Ensure that the Var has been defined and retreive the type
+    -- Ensure that the Var has been defined and is not a CallExpr then
+    -- retreive the type
     varIdentT :: Typer VarIdent
     varIdentT = Typer $ \ts var ->
       case Map.lookup var $ vTypes ts of
-        Just fTypes -> Right fTypes
         Nothing -> Left $ VarUndefErr var
+        Just fTypes ->
+          case Map.lookup (VarParam var) $ cExprs ts of
+            Just (ClosureExpr idents _) -> Left $ CallParamErr idents []
+            Nothing -> Right fTypes
 
 -- // BinExpr typer //
 
@@ -159,22 +179,24 @@ opT = guard g . imap (\(BinExpr lhs op rhs) -> (lhs, op, rhs)) $ binOpT
     -- NumOp expects the operands to both be an overlapping IntType and
     -- then will output the possible overlap that they could both be
     checkType (NumOp _) fTypes1 fTypes2
-      = case (filter filt inter, filter (not . filt) inter) of
-          (fTypes, []) -> fTypes
-          (_, _) -> []
+      = filter filt . intersect fTypes1 $ fTypes2
       where
         inter = intersect fTypes1 fTypes2
         filt (IntType _) = True
         filt _ = False
 
-    -- LogOp expects both operands to only be a BoolType
-    checkType (LogOp _) [BoolType] [BoolType] = [BoolType]
-    checkType (LogOp _) _ _ = []
+    -- LogOp expects both operands to be a BoolType
+    checkType (LogOp _) lhsTypes rhsTypes
+      = case elem BoolType lhsTypes && elem BoolType rhsTypes of
+          True -> [BoolType]
+          False -> []
 
     -- IfOp requires the first operand to be a boolean and will return the
     -- second operand's type
-    checkType (CndOp IfOp) [BoolType] fTypes = fTypes
-    checkType (CndOp IfOp) _ _ = []
+    checkType (CndOp IfOp) lhsTypes rhsTypes
+      = case elem BoolType lhsTypes of
+          True -> rhsTypes
+          False -> []
     -- ElseOp requires both operands to have the same type
     checkType (CndOp ElseOp) fTypes1 fTypes2 = intersect fTypes1 fTypes2
 
@@ -195,12 +217,48 @@ opT = guard g . imap (\(BinExpr lhs op rhs) -> (lhs, op, rhs)) $ binOpT
           [] -> []
           _ -> [BoolType]
 
+-- // Call body typer //
+callExprT :: Typer Expr
+callExprT
+  = guard g . imap (\(CallExpr param params) -> (param, params)) $ callT
+  where
+    g (CallExpr _ _) = True
+    g _ = False
+
+    callT :: Typer (Param, [Param])
+    callT = Typer $ \ts (ident, params) ->
+      case (runTyper paramT ts ident, Map.lookup ident $ cExprs ts) of
+        (Left err, _) -> Left err
+        (_, Nothing) -> Left $ ParamUndefErr [ident]
+        (Right fTypes, Just (ClosureExpr idents bodyExpr)) ->
+          case ( length idents == length params
+               , traverse (paramLookup ts) $ params
+               ) of
+            (False, _) -> Left $ CallParamErr idents params
+            (_, Nothing) -> Left $ ParamUndefErr params
+            (_, Just types) ->
+              let typedIdents = zip idents types
+               in bodyExprTFun (setScope typedIdents ts) bodyExpr
+
+    paramLookup :: TypeState -> Param -> Maybe [FieldType]
+    paramLookup ts (FieldParam field) =
+      fmap singleton . Map.lookup field $ fTypes ts
+    paramLookup ts (VarParam var) = Map.lookup var $ vTypes ts
+
+    paramT :: Typer Param
+    paramT = Typer $ \ts ident ->
+       case paramLookup ts ident of
+            Nothing -> Left $ ParamUndefErr [ident]
+            Just fTypes -> Right fTypes
+
+
 -- // Expr body typer //
 
-bodyExprT :: Typer Expr
-bodyExprT = guard g . imap (\(BodyExpr body) -> body) $ bodyT
+closureExprT :: Typer Expr
+closureExprT
+  = guard g . imap (\(ClosureExpr params body) -> (params, body)) $ closureT
   where
-    g (BodyExpr _) = True
+    g (ClosureExpr _ _) = True
     g _ = False
 
     -- We will traverse down the body and accumulate the VarIdent types until we
@@ -208,20 +266,24 @@ bodyExprT = guard g . imap (\(BodyExpr body) -> body) $ bodyT
     --
     --  Calls resetScope at each new Typer check of a BodyExpr so that we do not
     --  get false positives of VarIdents from outside the scope
-    bodyT :: Typer BodyExpr
-    bodyT = Typer $ \ts expr -> t (resetScope ts) expr
-      where
-        t :: TypeState -> BodyExpr -> Either TyperError [FieldType]
-        t ts (ReturnExpr expr) = runTyper exprT ts expr
-        t ts (NodeExpr var expr next)
-          = case runTyper exprT ts expr of
-              Left err -> Left err
-              Right fTypes -> t (insertVTypes var fTypes ts) next
+    closureT :: Typer ([VarIdent], BodyExpr)
+    closureT = Typer $ \ts (params, expr) ->
+      bodyExprTFun (closureScope params ts) expr
+
+bodyExprTFun :: TypeState -> BodyExpr -> Either TyperError [FieldType]
+bodyExprTFun ts (ReturnExpr expr) = runTyper exprT ts expr
+bodyExprTFun ts (NodeExpr var expr next)
+  = case runTyper exprT ts expr of
+      Left err -> Left err
+      Right fTypes ->
+        bodyExprTFun ( insertCExpr (VarParam var) expr
+          . insertVTypes var fTypes
+          $ ts) next
 
 -- // Expr typer //
 
 exprT :: Typer Expr
-exprT = opT <+> valueT <+> varT <+> fieldT <+> bodyExprT
+exprT = opT <+> valueT <+> varT <+> fieldT <+> closureExprT <+> callExprT
 
 -- // Statement typer //
 

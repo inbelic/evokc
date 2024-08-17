@@ -1,9 +1,10 @@
-field Finn : u8 = {
-   x = Evok::One == Finn ? 1 : 0
-   y = x - 1 + 3
-   z = {
-      x = 2 * 2
-      x < 4
-   } ? 1 : 0
-   (x - y) * z
+field Finn : i8 = {
+   x = Evok::One == Evok ? 1 : 0
+   y = x - 1 + 3 + 124
+   c = -1
+   z = [a b c]{
+      a + b + 3 + c
+   }
+   d = z
+   z[x y c]
 }

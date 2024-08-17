@@ -12,6 +12,7 @@ main = do
     let p = fieldDefP <* spaces <* eof
         t = fieldDefT
         ts = TypeState
+            (Map.fromList [])
             (Map.fromList [(FieldIdent "Evok", EnumType $ map EnumIdent ["One", "Two"])])
             (Map.fromList [])
     input <- readFile "tests/syntax.ev"

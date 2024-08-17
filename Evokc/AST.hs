@@ -11,6 +11,11 @@ newtype VarIdent = VarIdent String deriving (Eq, Ord, Show)
 
 -- // Define types //
 
+data Param
+  = FieldParam FieldIdent
+  | VarParam VarIdent
+  deriving (Eq, Ord, Show)
+
 data IntType = I8 | U8
     deriving (Eq, Show)
 
@@ -18,7 +23,18 @@ data FieldType
   = BoolType
   | IntType IntType
   | EnumType [EnumIdent]
-  deriving (Eq, Show)
+  deriving (Show)
+
+instance Eq FieldType where
+  BoolType == BoolType = True
+  (IntType at) == (IntType bt) = at == bt
+  (EnumType []) == (EnumType _) = True
+  (EnumType _) == (EnumType []) = True
+  (EnumType at) == (EnumType bt) = at == bt
+  _ == _ = False
+
+anyType :: [FieldType]
+anyType = [BoolType, IntType U8, IntType I8, EnumType []]
 
 -- // Define values //
 
@@ -53,7 +69,8 @@ data BodyExpr
 
 data Expr
   = BinExpr Expr BinOp Expr
-  | BodyExpr BodyExpr
+  | CallExpr Param [Param]
+  | ClosureExpr [VarIdent] BodyExpr
   | FieldExpr FieldIdent
   | ParenExpr Expr
   | UndefExpr -- placeholder during parsing
