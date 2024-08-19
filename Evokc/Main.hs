@@ -13,7 +13,7 @@ main = do
         t = fieldDefT
         ts = TypeState
             (Map.fromList [])
-            (Map.fromList [(FieldIdent "Evok", EnumType $ map EnumIdent ["One", "Two"])])
+            (Map.fromList [(FieldIdent "Power", IntType I8)])
             (Map.fromList [])
     input <- readFile "tests/syntax.ev"
     case runParser p () "" $ input of

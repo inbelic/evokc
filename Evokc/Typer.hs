@@ -191,6 +191,13 @@ opT = guard g . imap (\(BinExpr lhs op rhs) -> (lhs, op, rhs)) $ binOpT
           True -> [BoolType]
           False -> []
 
+    -- ItrOp expects the first operand to be a boolean and will return the
+    -- second operand's type
+    checkType (ItrOp _) lhsTypes rhsTypes
+      = case elem BoolType lhsTypes of
+          True -> rhsTypes
+          False -> []
+
     -- IfOp requires the first operand to be a boolean and will return the
     -- second operand's type
     checkType (CndOp IfOp) lhsTypes rhsTypes
@@ -230,7 +237,7 @@ callExprT
       case (runTyper paramT ts ident, Map.lookup ident $ cExprs ts) of
         (Left err, _) -> Left err
         (_, Nothing) -> Left $ ParamUndefErr [ident]
-        (Right fTypes, Just (ClosureExpr idents bodyExpr)) ->
+        (Right _, Just (ClosureExpr idents bodyExpr)) ->
           case ( length idents == length params
                , traverse (paramLookup ts) $ params
                ) of

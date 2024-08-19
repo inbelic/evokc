@@ -115,6 +115,8 @@ singleExprP
       , (">", CmpOp GtOp)
       , (">=", CmpOp GeOp)
       -- Comparison ops
+      , ("@", ItrOp IterateOp)
+      -- Iterator ops
       , ("|", LogOp OrOp)
       , ("&", LogOp AndOp)
       -- Logical ops
@@ -146,7 +148,7 @@ singleExprP
 type InParens = Bool
 exprsP :: (Stream s m Char) => InParens -> ParsecT s u m [Expr]
 exprsP True = sepEndBy1 singleExprP spaces <* char ')'
-exprsP False = sepEndBy1 singleExprP spacesP <* (void newline <|> eof)
+exprsP False = sepEndBy1 singleExprP spacesP <* (void (many1 newline) <|> eof)
 
 -- Parse an expression tree
 --  First parse the individual expr statements into a list

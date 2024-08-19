@@ -21,16 +21,16 @@ data IntType = I8 | U8
 
 data FieldType
   = BoolType
-  | IntType IntType
   | EnumType [EnumIdent]
+  | IntType IntType
   deriving (Show)
 
 instance Eq FieldType where
   BoolType == BoolType = True
-  (IntType at) == (IntType bt) = at == bt
   (EnumType []) == (EnumType _) = True
   (EnumType _) == (EnumType []) = True
   (EnumType at) == (EnumType bt) = at == bt
+  (IntType at) == (IntType bt) = at == bt
   _ == _ = False
 
 anyType :: [FieldType]
@@ -51,13 +51,16 @@ data CmpOp = EqOp | NeOp | GtOp | GeOp | LtOp | LeOp deriving (Eq, Show)
 -- A conditional flow operation. One that takes in a boolean/value and a value
 -- and conditionally returns one of the values
 data CndOp = IfOp | ElseOp deriving (Eq, Show)
+-- An 'iterator' operation. One that takes a boolean expr and a closure and
+-- outputs underlying type of the closure
+data ItrOp = IterateOp deriving (Eq, Show)
 -- A logical operation. One that takes two booleans and outputs a boolean
 data LogOp = AndOp | OrOp deriving (Eq, Show)
 -- A 'numerical' operation. One that takes an integer and outputs an integer
 data NumOp = AddOp | SubOp | MulOp | DivOp deriving (Eq, Show)
 
 -- A binary operation. A union of the listed operation types
-data BinOp = CmpOp CmpOp | CndOp CndOp | LogOp LogOp | NumOp NumOp
+data BinOp = CmpOp CmpOp | CndOp CndOp | ItrOp ItrOp | LogOp LogOp | NumOp NumOp
   deriving (Eq, Show)
 
 -- // Define an expression //
@@ -82,18 +85,19 @@ instance Shunt Expr where
   isOp (BinExpr _ _ _) = True
   isOp _ = False
 
+  prec (BinExpr _ (ItrOp _) _) = 1
   prec (BinExpr _ (CndOp op) _)
     = case op of
-        ElseOp -> 1
-        IfOp -> 2
-  prec (BinExpr _ (LogOp _) _) = 3
-  prec (BinExpr _ (CmpOp _) _) = 4
+        ElseOp -> 2
+        IfOp -> 3
+  prec (BinExpr _ (LogOp _) _) = 4
+  prec (BinExpr _ (CmpOp _) _) = 5
   prec (BinExpr _ (NumOp op) _)
     = case op of
-      AddOp -> 5
-      SubOp -> 5
-      MulOp -> 6
-      DivOp -> 6
+      AddOp -> 6
+      SubOp -> 6
+      MulOp -> 7
+      DivOp -> 7
   prec _ = 0
 
 -- // Define a statement //
