@@ -136,7 +136,10 @@ singleExprP
     callP = try $ CallExpr <$> paramP <*> paramsP
 
     paramP :: (Stream s m Char) => ParsecT s u m Param
-    paramP = (FieldParam <$> fieldIdentP) <|> (VarParam <$> varIdentP)
+    paramP
+      = (FieldParam <$> fieldIdentP)
+      <|> (ValParam <$> valueP)
+      <|> (VarParam <$> varIdentP)
 
     paramsP :: (Stream s m Char) => ParsecT s u m [Param]
     paramsP

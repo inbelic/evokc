@@ -250,13 +250,17 @@ callExprT
     paramLookup :: TypeState -> Param -> Maybe [FieldType]
     paramLookup ts (FieldParam field) =
       fmap singleton . Map.lookup field $ fTypes ts
+    paramLookup ts (ValParam val)
+      = case runTyper valueT ts (ValueExpr val) of
+          Left _ -> Nothing
+          Right fTypes -> Just fTypes
     paramLookup ts (VarParam var) = Map.lookup var $ vTypes ts
 
     paramT :: Typer Param
-    paramT = Typer $ \ts ident ->
-       case paramLookup ts ident of
-            Nothing -> Left $ ParamUndefErr [ident]
-            Just fTypes -> Right fTypes
+    paramT = Typer $ \ts param ->
+       case (paramLookup ts param) of
+         Nothing -> Left $ ParamUndefErr [param]
+         Just fTypes -> Right fTypes
 
 
 -- // Expr body typer //
@@ -275,7 +279,9 @@ closureExprT
     --  get false positives of VarIdents from outside the scope
     closureT :: Typer ([VarIdent], BodyExpr)
     closureT = Typer $ \ts (params, expr) ->
-      bodyExprTFun (closureScope params ts) expr
+      case bodyExprTFun (closureScope params ts) expr of
+        Left err -> Left err
+        Right fTypes -> Right $ fTypes
 
 bodyExprTFun :: TypeState -> BodyExpr -> Either TyperError [FieldType]
 bodyExprTFun ts (ReturnExpr expr) = runTyper exprT ts expr

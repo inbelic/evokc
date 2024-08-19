@@ -4,7 +4,7 @@ import ShuntYard ( Shunt(..) )
 import Text.Parsec ( SourcePos )
 import qualified Data.Map.Strict as Map (Map)
 
-newtype EnumIdent = EnumIdent String deriving (Eq, Show)
+newtype EnumIdent = EnumIdent String deriving (Eq, Ord, Show)
 newtype FieldIdent = FieldIdent String deriving (Eq, Ord, Show)
 newtype NameIdent = NameIdent String deriving (Eq, Ord, Show)
 newtype VarIdent = VarIdent String deriving (Eq, Ord, Show)
@@ -13,6 +13,7 @@ newtype VarIdent = VarIdent String deriving (Eq, Ord, Show)
 
 data Param
   = FieldParam FieldIdent
+  | ValParam Value
   | VarParam VarIdent
   deriving (Eq, Ord, Show)
 
@@ -42,7 +43,7 @@ data Value
   = Bool Bool
   | Int Int
   | Enum FieldIdent EnumIdent
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 -- // Define binary operations //
 

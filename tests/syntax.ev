@@ -3,8 +3,6 @@ field Finn : i8 = {
    fun = [acc a b]{
       acc + a + b * Power
    }
-   acc = 0
    x = 5
-   y = 3
-   q @fun[acc x y]
+   q @fun[0 x 3]
 }
